@@ -25,7 +25,7 @@ import { CampaignsPrimaryButtons } from './components/campaigns-primary-buttons'
 import { CampaignsDialogs } from './components/campaigns-dialogs'
 import { BaseError, useAccount, usePublicClient, useReadContract, useWaitForTransactionReceipt, useWatchContractEvent, useWriteContract } from "wagmi"
 import { abi } from './data/abi'
-import { Campaign, CampaignState } from './data/types'
+import { Campaign, CampaignState, CampaignStateBadgeClass, CampaignStateLabel } from './data/types'
 import { formatAddress } from '@/lib/utils'
 import { formatEther, parseEther } from 'viem'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,6 +44,12 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item"
 import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { simulateContract } from '@wagmi/core'
+import { config } from "@/main"
+import { toast } from "sonner"
+import DonationsTable from "./components/donations-table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
 
 const formSchema = z.object({
   donationAmount: z.coerce
@@ -54,12 +60,13 @@ const formSchema = z.object({
 export function CampaignDetail() {
   const { campaignId } = Route.useParams()
 
-  const { address } = useAccount()
+  const { address, isConnected } = useAccount()
 
   const client = usePublicClient()
 
   const {
-    writeContract,
+    mutate: writeContract,
+    mutateAsync: writeContractAsync,
     data: hash,
     error,
     isPending
@@ -91,7 +98,7 @@ export function CampaignDetail() {
     })
   }
 
-  const { data: campaignRaw } = useReadContract({
+  const { data: campaignRaw, refetch: refetchCampaign } = useReadContract({
     address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
     abi: abi,
     functionName: "campaigns",
@@ -113,14 +120,59 @@ export function CampaignDetail() {
     }
   }, [campaignRaw])
 
-  function donateToCampaignTx(campaignId: string, ethAmount: string) {
-    writeContract({
-      address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
-      abi: abi,
-      functionName: 'donate',
-      args: [BigInt(campaignId)],              // uint256 _id
-      value: parseEther(ethAmount),    // 👈 msg.value (ETH → WEI)
-    })
+  function parseDonateError(error: any): string {
+    const msg =
+      error?.shortMessage ||
+      error?.cause?.shortMessage ||
+      error?.message ||
+      ''
+
+    if (msg.includes('Ended')) return 'This campaign has ended'
+    if (msg.includes('Not active')) return 'This campaign is not active'
+    if (msg.includes('Owner cannot donate')) return 'Campaign owner cannot donate'
+    if (msg.includes('Zero ETH')) return 'Donation amount must be greater than 0'
+    if (msg.includes('Target reached')) return 'This campaign has already reached its target'
+
+    return 'Transaction failed'
+  }
+
+  async function donateToCampaignTx(campaignId: string, ethAmount: string) {
+    if (!isConnected || !address) {
+      toast.error('Please connect your wallet!')
+      return
+    }
+
+    try {
+      // 1. SIMULATE (bắt hết require) (Không tốn gas)
+      // Action for simulating/validating a contract interaction.
+      // simulateContract = chạy thử (dry-run) 1 smart contract function trên node
+      // KHÔNG gửi transaction
+      // KHÔNG tốn gas
+      // NHƯNG vẫn chạy toàn bộ require / revert
+      await simulateContract(config, {
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'donate',
+        args: [BigInt(campaignId)],
+        value: parseEther(ethAmount),
+        account: address,
+      })
+
+      // 2. SEND TX
+      const hash = await writeContractAsync({
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'donate',
+        args: [BigInt(campaignId)],
+        value: parseEther(ethAmount), // 👈 msg.value (ETH → WEI)
+      })
+
+      toast.success('Thank you! Your donation was successful')
+      return hash
+    } catch (err) {
+      toast.error(parseDonateError(err))
+      throw err
+    }
   }
 
   const onSubmit = (values: any) => {
@@ -135,6 +187,7 @@ export function CampaignDetail() {
     if (isConfirmed) {
       form.reset()
       refetchDonatedWei()
+      refetchCampaign()
     }
   }, [isConfirmed])
 
@@ -200,10 +253,10 @@ export function CampaignDetail() {
     address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
     abi: abi,
     eventName: "DonationMade",
-    // args: {
-    //   id: BigInt(campaignId), // chỉ nghe campaign hiện tại
-    //   // donator: undefined,
-    // },
+    args: {
+      id: BigInt(campaignId), // chỉ nghe campaign hiện tại
+      // donator: undefined,
+    },
     // enabled: !!campaignId,
     onLogs: async (logs) => {
       for (const log of logs) {
@@ -234,18 +287,143 @@ export function CampaignDetail() {
     fetchDonations()
   }, [campaignId])
 
-  function withdrawCampaign(campaignId: string) {
-    writeContract({
-      address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
-      abi: abi,
-      functionName: "withdraw",
-      args: [BigInt(campaignId)],
-    })
+  function parseWithdrawError(error: any): string {
+    const msg =
+      error?.shortMessage ||
+      error?.cause?.shortMessage ||
+      error?.message ||
+      ''
+
+    const m = msg.toLowerCase()
+
+    if (m.includes('not owner')) return 'Only the campaign owner can withdraw'
+    if (m.includes('not successful')) return 'Campaign is not successful yet'
+    if (m.includes('transfer failed')) return 'Failed to transfer funds'
+    if (m.includes('user rejected') || m.includes('denied transaction'))
+      return 'Transaction was cancelled by user'
+
+    return 'Withdraw transaction failed'
   }
 
-  const canWithdraw = useMemo(() => {
-    return campaign?.state === CampaignState.Successful
-  }, [campaign])
+  async function withdrawCampaign(campaignId: string) {
+    if (!isConnected || !address) {
+      toast.error('Please connect your wallet!')
+      return
+    }
+
+    try {
+      // 1. SIMULATE (bắt hết require) (Không tốn gas)
+      // Action for simulating/validating a contract interaction.
+      // simulateContract = chạy thử (dry-run) 1 smart contract function trên node
+      // KHÔNG gửi transaction
+      // KHÔNG tốn gas
+      // NHƯNG vẫn chạy toàn bộ require / revert
+      await simulateContract(config, {
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'withdraw',
+        args: [BigInt(campaignId)],
+        account: address,
+      })
+
+      // 2. SEND TX
+      const hash = await writeContractAsync({
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'withdraw',
+        args: [BigInt(campaignId)],
+      })
+
+      toast.success('Withdrawal successful')
+      return hash
+    } catch (err) {
+      toast.error(parseWithdrawError(err))
+      throw err
+    }
+  }
+
+  function parseFinalizeError(error: any): string {
+    const msg =
+      error?.shortMessage ||
+      error?.cause?.shortMessage ||
+      error?.message ||
+      ''
+
+    if (msg.includes('Not active'))
+      return 'Campaign is not active'
+
+    if (msg.includes('Not ended'))
+      return 'Campaign has not ended yet'
+
+    return 'Finalize transaction failed'
+  }
+
+  async function finalizeCampaign(campaignId: string) {
+    try {
+      await simulateContract(config, {
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'finalize',
+        args: [BigInt(campaignId)],
+      })
+
+      await writeContractAsync({
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'finalize',
+        args: [BigInt(campaignId)],
+      })
+
+      toast.success('Campaign finalized successfully')
+    } catch (error) {
+      toast.error(parseFinalizeError(error))
+    }
+  }
+
+  function parseRefundError(error: any): string {
+    const msg =
+      error?.shortMessage ||
+      error?.cause?.shortMessage ||
+      error?.message ||
+      ''
+
+    if (msg.includes('Not failed'))
+      return 'Campaign has not failed'
+
+    if (msg.includes('Nothing to refund'))
+      return 'You have no donation to refund'
+
+    if (msg.includes('Refund failed'))
+      return 'Refund transaction failed'
+
+    return 'Refund failed'
+  }
+
+  async function refundCampaign(campaignId: string) {
+    try {
+      // 1. Simulate trước để bắt require
+      await simulateContract(config, {
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'refund',
+        args: [BigInt(campaignId)],
+      })
+
+      // 2. Gửi transaction
+      await writeContractAsync({
+        address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
+        abi,
+        functionName: 'refund',
+        args: [BigInt(campaignId)],
+      })
+
+      // 3. Thành công
+      toast.success('Refund successful')
+    } catch (error) {
+      // 4. Bắt lỗi chính xác
+      toast.error(parseRefundError(error))
+    }
+  }
 
   const contributors = useMemo(() => {
     return Array.from(
@@ -255,12 +433,12 @@ export function CampaignDetail() {
 
   const daysLeft = useMemo(() => {
     if (!campaign) return 0
-    if (campaign.state !== CampaignState.Active) return 0
+    // if (campaign.state !== CampaignState.Active) return 0
 
     const nowMs = Date.now()                    // milliseconds
     const deadlineMs = Number(campaign.deadline) * 1000 // seconds → ms
 
-    if (deadlineMs <= nowMs) return 0
+    // if (deadlineMs <= nowMs) return 0
 
     const diffMs = deadlineMs - nowMs
     const msPerDay = 1000 * 60 * 60 * 24
@@ -366,14 +544,17 @@ export function CampaignDetail() {
               </Card>
               <Card className='col-span-1 lg:col-span-3'>
                 <CardHeader>
-                  <CardTitle>Devices</CardTitle>
-                  <CardDescription>How users access your app</CardDescription>
+                  <CardTitle>Campaign Overview</CardTitle>
+                  <CardDescription>Fundraising status and contribution details</CardDescription>
+                  <Badge className={CampaignStateBadgeClass[campaign?.state]}>
+                    {CampaignStateLabel[campaign?.state]}
+                  </Badge>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <div>Progress</div>
+                        <div>Funding Progress</div>
                         <div>{progress} %</div>
                       </div>
                       <Progress value={progress} />
@@ -383,20 +564,20 @@ export function CampaignDetail() {
 
                       {/* Item 1 */}
                       <div className="flex flex-col items-center">
-                        <span className="text-3xl font-bold">{campaign?.amountCollected ? formatEther(campaign.amountCollected) : 0}</span>
-                        <span className="text-sm mt-1">ETH Raised</span>
+                        <span className="text-3xl font-bold">{campaign?.amountCollected ? formatEther(campaign.amountCollected) : 0} ETH</span>
+                        <span className="text-sm mt-1">Raised</span>
                       </div>
 
                       {/* Item 2 */}
                       <div className="flex flex-col items-center">
-                        <span className="text-3xl font-bold">{campaign?.target ? formatEther(campaign.target) : 0}</span>
-                        <span className="text-sm mt-1">ETH Target</span>
+                        <span className="text-3xl font-bold">{campaign?.target ? formatEther(campaign.target) : 0} ETH</span>
+                        <span className="text-sm mt-1">Target</span>
                       </div>
 
                       {/* Item 3 */}
                       <div className="flex flex-col items-center">
                         <span className="text-3xl font-bold">{contributors ? contributors.length : 0}</span>
-                        <span className="text-sm mt-1">Contributors</span>
+                        <span className="text-sm mt-1">Total Contributors</span>
                       </div>
 
                       {/* Item 4 */}
@@ -407,27 +588,48 @@ export function CampaignDetail() {
 
                     </div>
 
-                    {isOwner && canWithdraw && (
-                      <Button
-                        className='mt-2'
-                        disabled={isPending || isConfirming}
-                        onClick={() => withdrawCampaign(campaignId)}
-                      >
-                        {isPending && <Loader2 className='animate-spin' />}
-                        Withdraw funds
-                      </Button>
+                    {isOwner && (
+                      <div className="grid gap-3">
+                        <Button
+                          className='mt-2'
+                          disabled={isPending || isConfirming}
+                          onClick={() => withdrawCampaign(campaignId)}
+                        >
+                          {isPending && <Loader2 className='animate-spin' />}
+                          Withdraw funds
+                        </Button>
+
+                        <div className='relative my-2'>
+                          <div className='absolute inset-0 flex items-center'>
+                            <span className='w-full border-t' />
+                          </div>
+                          <div className='relative flex justify-center text-xs uppercase'>
+                            <span className='bg-background px-2 text-muted-foreground'>
+                              Or continue with
+                            </span>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant='outline'
+                          disabled={isPending || isConfirming}
+                          onClick={() => finalizeCampaign(campaignId)}
+                        >
+                          Finalize Campaign
+                        </Button>
+                      </div>
                     )}
 
                     {!isOwner && (
                       <>
                         <Form {...form}>
-                          <form onSubmit={form.handleSubmit(onSubmit)}>
+                          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
                             <FormField
                               control={form.control}
                               name='donationAmount'
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>Donation amount</FormLabel>
+                                  <FormLabel>Enter donation amount (ETH)</FormLabel>
                                   <FormControl>
                                     <Input
                                       placeholder='Donation amount'
@@ -473,6 +675,34 @@ export function CampaignDetail() {
                               {isPending && <Loader2 className='animate-spin' />}
                               Contribute Now
                             </Button>
+
+                            <div className='relative my-2'>
+                              <div className='absolute inset-0 flex items-center'>
+                                <span className='w-full border-t' />
+                              </div>
+                              <div className='relative flex justify-center text-xs uppercase'>
+                                <span className='bg-background px-2 text-muted-foreground'>
+                                  Or continue with
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className='grid grid-cols-2 gap-2'>
+                              <Button
+                                variant='outline'
+                                disabled={isPending || isConfirming}
+                                onClick={() => finalizeCampaign(campaignId)}
+                              >
+                                Finalize Campaign
+                              </Button>
+
+                              <Button
+                                variant='outline'
+                                onClick={() => refundCampaign(campaignId)}
+                              >
+                                Refund
+                              </Button>
+                            </div>
                           </form>
                         </Form>
 
@@ -490,7 +720,11 @@ export function CampaignDetail() {
               </Card>
             </div>
 
-            <Tabs
+            <div>
+              <DonationsTable donations={donations} />
+            </div>
+
+            {/* <Tabs
               orientation='vertical'
               defaultValue='overview'
               className='space-y-4'
@@ -508,62 +742,14 @@ export function CampaignDetail() {
                 </TabsList>
               </div>
               <TabsContent value='overview' className='space-y-4'>
-                <Table>
-                  <TableCaption>A list of your recent invoices.</TableCaption>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Donator</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Transaction</TableHead>
-                      <TableHead className="text-right">Block</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {donations.map((donation) => (
-                      <TableRow key={donation.txHash}>
-                        <TableCell>
-                          <a
-                            href={`https://sepolia.etherscan.io/address/${donation.donator}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {donation.donator.slice(0, 6)}...{donation.donator.slice(-4)}
-                          </a>
-                        </TableCell>
-
-                        <TableCell>{formatEther(donation.amount)} ETH</TableCell>
-
-                        <TableCell>
-                          <a
-                            href={`https://sepolia.etherscan.io/tx/${donation.txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            View Tx
-                          </a>
-                        </TableCell>
-
-                        <TableCell className="text-right">
-                          <a
-                            href={`https://sepolia.etherscan.io/block/${donation.blockNumber}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            #{String(donation.blockNumber)}
-                          </a>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                
               </TabsContent>
               <TabsContent value='analytics' className='space-y-4'>
-                {/* <Analytics /> */}
               </TabsContent>
-            </Tabs>
+            </Tabs> */}
           </div>
         </div>
-      </Main>
+      </Main >
     </>
 
     // <>

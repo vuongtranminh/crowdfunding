@@ -45,9 +45,9 @@ export function DatePicker({
           endMonth={new Date(today.getFullYear() + 10, today.getMonth())}
           selected={selected}
           onSelect={onSelect}
-          disabled={(date: Date) =>
-            date < new Date()
-          }
+          // disabled={(date: Date) =>
+          //   date < new Date()
+          // }
         />
       </PopoverContent>
     </Popover>

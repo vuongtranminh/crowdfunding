@@ -24,7 +24,7 @@ import { cookieToInitialState } from "wagmi";
 import { getConfig } from "../wagmi.config";
 
 
-const config = getConfig()
+export const config = getConfig()
 
 const initialState: State | undefined = cookieToInitialState(
   config,

@@ -23,11 +23,12 @@ import { CampaignsPrimaryButtons } from './components/campaigns-primary-buttons'
 import { CampaignsDialogs } from './components/campaigns-dialogs'
 import { usePublicClient, useReadContract, useWatchContractEvent } from "wagmi"
 import { abi } from './data/abi'
-import { Campaign, CampaignState } from './data/types'
+import { Campaign, CampaignState, CampaignStateBadgeClass, CampaignStateLabel } from './data/types'
 import { formatAddress } from '@/lib/utils'
 import { formatEther } from 'viem'
 import { readContract } from '@wagmi/core'
 import { getConfig } from 'wagmi.config'
+import { Badge } from '@/components/ui/badge'
 
 const route = getRouteApi('/_authenticated/campaigns/')
 
@@ -114,12 +115,12 @@ export function Campaigns() {
 
   const daysLeft = (campaign: Campaign | undefined) => {
     if (!campaign) return 0
-    if (campaign.state !== CampaignState.Active) return 0
+    // if (campaign.state !== CampaignState.Active) return 0
 
     const nowMs = Date.now()                    // milliseconds
     const deadlineMs = Number(campaign.deadline) * 1000 // seconds → ms
 
-    if (deadlineMs <= nowMs) return 0
+    // if (deadlineMs <= nowMs) return 0
 
     const diffMs = deadlineMs - nowMs
     const msPerDay = 1000 * 60 * 60 * 24
@@ -171,12 +172,15 @@ export function Campaigns() {
 
                 {/* 3. Top Label: Collection */}
                 <div className="absolute top-5 left-5">
-                  <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-lg">
+                  {/* <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-lg">
                     <Layers className="w-4 h-4 text-white" />
                     <span className="text-white text-xs font-semibold tracking-wide">
                       Collection
                     </span>
-                  </div>
+                  </div> */}
+                  <Badge className={CampaignStateBadgeClass[campaign.state]}>
+                    {CampaignStateLabel[campaign.state]}
+                  </Badge>
                 </div>
 
                 {/* 4. Bottom Content */}
@@ -190,7 +194,7 @@ export function Campaigns() {
                   </div>
 
                   {/* Description */}
-                  <p className="text-gray-300 text-sm leading-relaxed font-medium">
+                  <p className="text-gray-300 text-sm leading-relaxed font-medium line-clamp-2">
                     {campaign.description}
                   </p>
 

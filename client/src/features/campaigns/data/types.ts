@@ -23,3 +23,10 @@ export const CampaignStateLabel: Record<CampaignState, string> = {
   [CampaignState.Failed]: "Failed",
   [CampaignState.Withdrawn]: "Withdrawn",
 }
+
+export const CampaignStateBadgeClass: Record<CampaignState, string> = {
+  [CampaignState.Active]: "bg-blue-500 text-white",
+  [CampaignState.Successful]: "bg-green-500 text-white",
+  [CampaignState.Failed]: "bg-red-500 text-white",
+  [CampaignState.Withdrawn]: "bg-gray-400 text-white",
+}

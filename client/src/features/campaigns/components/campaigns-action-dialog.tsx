@@ -29,6 +29,7 @@ import { Campaign } from '../data/schema'
 import { useEffect } from 'react'
 import { abi } from '../data/abi'
 import { parseEther } from 'viem'
+import { Textarea } from '@/components/ui/textarea'
 
 const formSchema = z
   .object({
@@ -191,7 +192,7 @@ export function CampaignsActionDialog({
                       Description
                     </FormLabel>
                     <FormControl>
-                      <Input
+                      <Textarea
                         placeholder='Description'
                         className='col-span-4'
                         autoComplete='off'
@@ -233,7 +234,7 @@ export function CampaignsActionDialog({
                     <FormLabel>Deadline</FormLabel>
                     <DatePicker selected={field.value} onSelect={field.onChange} />
                     <FormDescription>
-                      Your date of birth is used to calculate your age.
+                      The campaign will automatically end at this time.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
