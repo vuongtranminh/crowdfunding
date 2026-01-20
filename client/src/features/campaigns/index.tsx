@@ -1,15 +1,6 @@
-import { type ChangeEvent, useEffect, useState } from 'react'
-import { getRouteApi, Link } from '@tanstack/react-router'
-import { SlidersHorizontal, ArrowUpAZ, ArrowDownAZ, Layers, BadgeCheck } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { useEffect, useState } from 'react'
+import { Link } from '@tanstack/react-router'
+import { BadgeCheck } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -26,24 +17,14 @@ import { abi } from './data/abi'
 import { Campaign, CampaignState, CampaignStateBadgeClass, CampaignStateLabel } from './data/types'
 import { formatAddress } from '@/lib/utils'
 import { formatEther } from 'viem'
-import { readContract } from '@wagmi/core'
-import { getConfig } from 'wagmi.config'
 import { Badge } from '@/components/ui/badge'
-
-const route = getRouteApi('/_authenticated/campaigns/')
-
-type AppType = 'all' | 'connected' | 'notConnected'
-
-const appText = new Map<AppType, string>([
-  ['all', 'All Apps'],
-  ['connected', 'Connected'],
-  ['notConnected', 'Not Connected'],
-])
 
 export function Campaigns() {
 
   const client = usePublicClient()
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
+
+  console.log('import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`:', import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`);
 
   const { data: total } = useReadContract({
     address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,

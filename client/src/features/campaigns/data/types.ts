@@ -30,3 +30,10 @@ export const CampaignStateBadgeClass: Record<CampaignState, string> = {
   [CampaignState.Failed]: "bg-red-500 text-white",
   [CampaignState.Withdrawn]: "bg-gray-400 text-white",
 }
+
+export type Donation = {
+  donator: `0x${string}`
+  amount: bigint
+  txHash: `0x${string}`
+  blockNumber: bigint
+}

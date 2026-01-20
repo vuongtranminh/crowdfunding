@@ -1,16 +1,8 @@
 import { Route } from "@/routes/_authenticated/campaigns/$campaignId"
-import { type ChangeEvent, useEffect, useMemo, useState } from 'react'
-import { getRouteApi } from '@tanstack/react-router'
-import { SlidersHorizontal, ArrowUpAZ, ArrowDownAZ, Layers, BadgeCheck, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -18,18 +10,13 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { apps } from '../apps/data/apps'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { CampaignsProvider } from './components/campaigns-provider'
-import { CampaignsPrimaryButtons } from './components/campaigns-primary-buttons'
-import { CampaignsDialogs } from './components/campaigns-dialogs'
 import { BaseError, useAccount, usePublicClient, useReadContract, useWaitForTransactionReceipt, useWatchContractEvent, useWriteContract } from "wagmi"
 import { abi } from './data/abi'
-import { Campaign, CampaignState, CampaignStateBadgeClass, CampaignStateLabel } from './data/types'
+import { Campaign, CampaignState, CampaignStateBadgeClass, CampaignStateLabel, Donation } from './data/types'
 import { formatAddress } from '@/lib/utils'
 import { formatEther, parseEther } from 'viem'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import {
   Form,
@@ -42,13 +29,11 @@ import {
 import { z } from 'zod'
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item"
-import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Item, ItemContent, ItemDescription } from "@/components/ui/item"
 import { simulateContract } from '@wagmi/core'
 import { config } from "@/main"
 import { toast } from "sonner"
 import DonationsTable from "./components/donations-table"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 
 const formSchema = z.object({
@@ -65,7 +50,6 @@ export function CampaignDetail() {
   const client = usePublicClient()
 
   const {
-    mutate: writeContract,
     mutateAsync: writeContractAsync,
     data: hash,
     error,
@@ -80,7 +64,7 @@ export function CampaignDetail() {
   })
 
   // const [contributions, setContributions] = useState([])
-  const [donations, setDonations] = useState([])
+  const [donations, setDonations] = useState<Donation[]>([])
 
   const form = useForm<z.input<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -88,15 +72,6 @@ export function CampaignDetail() {
       donationAmount: 0,
     },
   })
-
-  const handleFinalize = (id: string) => {
-    writeContract({
-      address: import.meta.env.VITE_CONTRACT_ADDRESS,
-      abi,
-      functionName: "finalize",
-      args: [BigInt(id)], // uint256 → BigInt
-    })
-  }
 
   const { data: campaignRaw, refetch: refetchCampaign } = useReadContract({
     address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
@@ -109,7 +84,8 @@ export function CampaignDetail() {
     if (!campaignRaw) return undefined
 
     return {
-      owner: campaignRaw[0],
+      campaignId: BigInt(campaignId),
+      owner: campaignRaw[0] as `0x${string}`,
       title: campaignRaw[1],
       description: campaignRaw[2],
       target: campaignRaw[3],
@@ -118,7 +94,7 @@ export function CampaignDetail() {
       // image: campaignRaw[6],
       state: campaignRaw[6] as CampaignState,
     }
-  }, [campaignRaw])
+  }, [campaignRaw, campaignId])
 
   function parseDonateError(error: any): string {
     const msg =
@@ -222,7 +198,7 @@ export function CampaignDetail() {
     }
   })
 
-  async function getDonations(campaignId: string) {
+  async function getDonations(campaignId: string): Promise<Donation[]> {
     const logs = await client!.getLogs({
       address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
       event: {
@@ -242,8 +218,8 @@ export function CampaignDetail() {
     })
 
     return logs.map(log => ({
-      donator: log.args.donator,
-      amount: log.args.amount,
+      donator: log.args.donator!,
+      amount: log.args.amount!,
       txHash: log.transactionHash,
       blockNumber: log.blockNumber,
     }))
@@ -262,8 +238,8 @@ export function CampaignDetail() {
       for (const log of logs) {
         console.log('New donation log:', log);
         const donation = {
-          donator: log.args.donator,
-          amount: log.args.amount,
+          donator: log.args.donator!,
+          amount: log.args.amount!,
           txHash: log.transactionHash,
           blockNumber: log.blockNumber,
         }
@@ -280,7 +256,7 @@ export function CampaignDetail() {
     if (!campaignId) return
 
     async function fetchDonations() {
-      const _donations = await getDonations(campaignId)
+      const _donations: Donation[] = await getDonations(campaignId)
       setDonations([..._donations].reverse())
     }
 
@@ -546,8 +522,8 @@ export function CampaignDetail() {
                 <CardHeader>
                   <CardTitle>Campaign Overview</CardTitle>
                   <CardDescription>Fundraising status and contribution details</CardDescription>
-                  <Badge className={CampaignStateBadgeClass[campaign?.state]}>
-                    {CampaignStateLabel[campaign?.state]}
+                  <Badge className={CampaignStateBadgeClass[campaign?.state ? campaign.state : CampaignState.Active]}>
+                    {CampaignStateLabel[campaign?.state ? campaign.state : CampaignState.Active]}
                   </Badge>
                 </CardHeader>
                 <CardContent>
@@ -627,13 +603,18 @@ export function CampaignDetail() {
                             <FormField
                               control={form.control}
                               name='donationAmount'
-                              render={({ field }) => (
+                              render={({ field: { value, ...rest } }) => (
                                 <FormItem>
                                   <FormLabel>Enter donation amount (ETH)</FormLabel>
                                   <FormControl>
                                     <Input
                                       placeholder='Donation amount'
-                                      {...field}
+                                      type="number" // Nên thêm type="number" để hiện bàn phím số
+                                      {...rest}
+
+                                      // 🔥 FIX LỖI TẠI ĐÂY:
+                                      // Ép kiểu 'unknown' thành 'string | number' để TypeScript không báo lỗi nữa
+                                      value={(value as string | number) ?? ''}
                                     // onChange={(e) => {
                                     //   const value = e.target.value
                                     //   field.onChange(value === '' ? undefined : Number(value))
@@ -776,65 +757,5 @@ export function CampaignDetail() {
 
     //   </Main>
     // </>
-  )
-}
-
-type Donator = {
-  address: `0x${string}`
-  amountWei: bigint
-  amountEth: string
-}
-
-function DonatorsList({ campaignId }: { campaignId: string }) {
-  const {
-    data,
-    isLoading,
-    isError,
-  } = useReadContract({
-    address: import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}`,
-    abi: abi,
-    functionName: 'getDonators',
-    args: [BigInt(campaignId)],
-    query: {
-      staleTime: Infinity,
-    },
-  })
-
-  if (isLoading) return <div>Loading...</div>
-  if (isError) return <div>Error loading donators</div>
-
-  /**
-   * data type:
-   * readonly [
-   *   readonly `0x${string}`[],
-   *   readonly bigint[]
-   * ]
-   */
-  const donators = data?.[0] ?? []
-  const donations = data?.[1] ?? []
-
-  // Gộp thành object cho dễ dùng
-  const donatorList: Donator[] = donators.map((address, index) => ({
-    address,
-    amountWei: donations[index],
-    amountEth: formatEther(donations[index]),
-  }))
-
-  return (
-    <div className="space-y-2">
-      {donatorList.length === 0 && (
-        <p>Chưa có ai donate</p>
-      )}
-
-      {donatorList.map((item, index) => (
-        <div
-          key={index}
-          className="flex justify-between rounded border p-2"
-        >
-          <span>{item.address}</span>
-          <span>{item.amountEth} ETH</span>
-        </div>
-      ))}
-    </div>
   )
 }

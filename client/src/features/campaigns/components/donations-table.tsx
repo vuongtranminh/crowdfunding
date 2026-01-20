@@ -1,7 +1,8 @@
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatEther } from "viem";
+import { Donation } from "../data/types";
 
-export default function DonationsTable({ donations }) {
+export default function DonationsTable({ donations }: { donations: Donation[] }) {
     return (
         <Table>
             <TableCaption>A list of recent donations for this campaign.</TableCaption>
