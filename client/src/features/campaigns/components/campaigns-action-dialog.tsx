@@ -34,7 +34,9 @@ const formSchema = z
   .object({
     title: z.string().min(1, 'Title is required.'),
     description: z.string().min(1, 'Description is required.'),
-    target: z.number().positive('Target must be greater than 0'),
+    target: z.coerce
+      .number()
+      .positive('Target amount must be greater than 0'),
     deadline: z.date('Please select your deadline.'),
     // image: z
     //   .instanceof(FileList)
@@ -46,7 +48,7 @@ const formSchema = z
     //     'Please upload (jpg, jpeg, png, webp) format.'
     //   ),
   })
-type CampaignForm = z.infer<typeof formSchema>
+type CampaignForm = z.input<typeof formSchema>
 
 type CampaignActionDialogProps = {
   open: boolean
@@ -205,7 +207,7 @@ export function CampaignsActionDialog({
               <FormField
                 control={form.control}
                 name='target'
-                render={({ field }) => (
+                render={({ field: { value, ...rest } }) => (
                   <FormItem className='grid grid-cols-6 items-center space-y-0 gap-x-4 gap-y-1'>
                     <FormLabel className='col-span-2 text-end'>
                       Target Amount (ETH)
@@ -214,11 +216,12 @@ export function CampaignsActionDialog({
                       <Input
                         placeholder='Target Amount'
                         className='col-span-4'
-                        {...field}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          field.onChange(value === '' ? undefined : Number(value))
-                        }}
+                        type="number" // Nên thêm type="number" để hiện bàn phím số
+                        {...rest}
+
+                        // 🔥 FIX LỖI TẠI ĐÂY:
+                        // Ép kiểu 'unknown' thành 'string | number' để TypeScript không báo lỗi nữa
+                        value={(value as string | number) ?? ''}
                       />
                     </FormControl>
                     <FormMessage className='col-span-4 col-start-3' />

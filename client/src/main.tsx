@@ -21,7 +21,7 @@ import './styles/index.css'
 import { type State, WagmiProvider } from "wagmi";
 import { cookieToInitialState } from "wagmi";
 
-import { getConfig } from "../wagmi.config";
+import { getConfig } from "./wagmi/config";
 
 
 export const config = getConfig()
