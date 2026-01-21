@@ -109,7 +109,7 @@ export function CampaignsActionDialog({
     createCampaignTx({
       title: values.title,
       description: values.description,
-      target: values.target,
+      target: Number(values.target),
       deadline: values.deadline.getTime() / 1000, // milliseconds → seconds
       // image: fileDetails.name,
     })
